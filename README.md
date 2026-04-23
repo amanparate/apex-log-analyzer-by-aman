@@ -1,4 +1,4 @@
-# Apex Log Analyzer by Aman
+# Apex Doctor by Aman
 
 > A VS Code extension that parses and analyses Salesforce Apex debug logs — with AI-powered root-cause explanations, performance insights, live log streaming, and one-click navigation to Apex source.
 
