@@ -17,6 +17,7 @@
       { "command": "apexLogAnalyzer.setApiKey", "title": "Set LLM API Key", "category": "Apex Log Analyzer" },
       { "command": "apexLogAnalyzer.startStream", "title": "Start Log Streaming", "category": "Apex Log Analyzer" },
       { "command": "apexLogAnalyzer.stopStream", "title": "Stop Log Streaming", "category": "Apex Log Analyzer" },
+      { "command": "apexLogAnalyzer.compareLogs", "title": "Compare Two Apex Logs", "category": "Apex Log Analyzer" },
       { "command": "apexLogAnalyzer.clearApiKey", "title": "Clear LLM API Key", "category": "Apex Log Analyzer" }
     ],
     "menus": {
@@ -30,7 +31,8 @@
         { "command": "apexLogAnalyzer.setApiKey" },
         { "command": "apexLogAnalyzer.clearApiKey" },
         { "command": "apexLogAnalyzer.startStream" },
-        { "command": "apexLogAnalyzer.stopStream" }
+        { "command": "apexLogAnalyzer.stopStream" },
+        { "command": "apexLogAnalyzer.compareLogs" }
       ]
     },
     "configuration": {

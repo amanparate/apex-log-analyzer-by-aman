@@ -7,6 +7,8 @@ import { renderAnalysisHtml } from './webview';
 import { StreamingService } from './streamingService';
 import { StreamView } from './streamView';
 import { ApexClassResolver } from './apexClassResolver';
+import { CompareService } from './compareService';
+import { renderComparisonHtml, buildComparisonMarkdown } from './compareView';
 
 let currentPanel: vscode.WebviewPanel | undefined;
 let currentAnalysis: Analysis | undefined;
@@ -18,6 +20,7 @@ export function activate(context: vscode.ExtensionContext) {
   const sf = new SalesforceService();
   const ai = new AiService(context.secrets);
   const classResolver = new ApexClassResolver();
+  const compareService = new CompareService();
   const streaming = new StreamingService(sf);
   const streamView = new StreamView();
 
@@ -184,7 +187,11 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.window.showInformationMessage('Log streaming stopped.');
   });
 
-  context.subscriptions.push(analyzeCmd, fetchLogCmd, exportCmd, startStreamCmd, stopStreamCmd);
+  const compareCmd = vscode.commands.registerCommand('apexLogAnalyzer.compareLogs', async () => {
+    await runCompareFlow(parser, analyzer, compareService);
+  });
+
+  context.subscriptions.push(analyzeCmd, fetchLogCmd, exportCmd, startStreamCmd, stopStreamCmd, compareCmd);
 }
 
 async function showLogPicker(logs: ApexLogRecord[]): Promise<ApexLogRecord | undefined> {
@@ -356,6 +363,131 @@ async function jumpToLogLine(line: number) {
   } catch (e: any) {
     vscode.window.showErrorMessage(`Could not jump to line: ${e.message}`);
   }
+}
+
+async function runCompareFlow(
+  parser: ApexLogParser,
+  analyzer: ApexLogAnalyzer,
+  compareService: CompareService
+) {
+  const candidates = await collectLogCandidates();
+  if (candidates.length < 2) {
+    vscode.window.showWarningMessage(
+      'Compare Two Logs needs at least 2 open log files. Open your two logs (paste them into VS Code tabs if needed) and try again.'
+    );
+    return;
+  }
+
+  const baseline = await vscode.window.showQuickPick(
+    candidates.map(c => ({
+      label: c.label,
+      description: c.description,
+      detail: c.detail,
+      candidate: c
+    })),
+    { placeHolder: 'Step 1 of 2 — Select the BASELINE log', matchOnDescription: true, matchOnDetail: true }
+  );
+  if (!baseline) { return; }
+
+  const remaining = candidates.filter(c => c.key !== baseline.candidate.key);
+  const comparison = await vscode.window.showQuickPick(
+    remaining.map(c => ({
+      label: c.label,
+      description: c.description,
+      detail: c.detail,
+      candidate: c
+    })),
+    { placeHolder: 'Step 2 of 2 — Select the COMPARISON log', matchOnDescription: true, matchOnDetail: true }
+  );
+  if (!comparison) { return; }
+
+  await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: 'Comparing logs…' },
+    async () => {
+      const baselineText = await baseline.candidate.getText();
+      const comparisonText = await comparison.candidate.getText();
+      const baselineAnalysis = analyzer.analyze(parser.parse(baselineText));
+      const comparisonAnalysis = analyzer.analyze(parser.parse(comparisonText));
+      const diff = compareService.compare(
+        baselineAnalysis,
+        comparisonAnalysis,
+        baseline.candidate.label,
+        comparison.candidate.label
+      );
+      showComparisonPanel(diff);
+    }
+  );
+}
+
+interface LogCandidate {
+  key: string;
+  label: string;
+  description: string;
+  detail: string;
+  getText: () => Promise<string>;
+}
+
+async function collectLogCandidates(): Promise<LogCandidate[]> {
+  const candidates: LogCandidate[] = [];
+  const seen = new Set<string>();
+  const isApexLog = (text: string) =>
+    /\|EXECUTION_STARTED\b/.test(text) || /^\s*\d+\.\d+\s+APEX_CODE,/m.test(text);
+
+  // All open text documents (saved + untitled)
+  for (const doc of vscode.workspace.textDocuments) {
+    if (doc.isClosed) { continue; }
+    const key = doc.uri.toString();
+    if (seen.has(key)) { continue; }
+    const sample = doc.getText().slice(0, 2048);
+    if (!isApexLog(sample)) { continue; }
+    seen.add(key);
+    const fsPath = doc.uri.fsPath;
+    const label = doc.isUntitled ? `$(file) ${doc.uri.path}` : `$(file) ${fsPath.split('/').pop()}`;
+    candidates.push({
+      key,
+      label,
+      description: `${(doc.getText().length / 1024).toFixed(1)} KB`,
+      detail: doc.isUntitled ? 'Untitled tab' : fsPath,
+      getText: async () => doc.getText()
+    });
+  }
+
+  // Also scan the workspace for .log files (limit 20)
+  const files = await vscode.workspace.findFiles('**/*.log', '**/node_modules/**', 20);
+  for (const uri of files) {
+    const key = uri.toString();
+    if (seen.has(key)) { continue; }
+    seen.add(key);
+    candidates.push({
+      key,
+      label: `$(file) ${uri.fsPath.split('/').pop()}`,
+      description: 'workspace file',
+      detail: uri.fsPath,
+      getText: async () => {
+        const buf = await vscode.workspace.fs.readFile(uri);
+        return new TextDecoder('utf8').decode(buf);
+      }
+    });
+  }
+
+  return candidates;
+}
+
+function showComparisonPanel(comparison: import('./compareService').Comparison) {
+  const panel = vscode.window.createWebviewPanel(
+    'apexLogCompare',
+    `📊 Compare: ${comparison.summary.baseline.label} vs ${comparison.summary.comparison.label}`,
+    vscode.ViewColumn.Beside,
+    { enableScripts: true, retainContextWhenHidden: true }
+  );
+  panel.webview.html = renderComparisonHtml(comparison);
+  panel.webview.onDidReceiveMessage(async (msg) => {
+    if (msg.command === 'exportCompareMarkdown') {
+      const md = buildComparisonMarkdown(comparison);
+      await vscode.env.clipboard.writeText(md);
+      vscode.window.showInformationMessage('Comparison copied to clipboard as Markdown.');
+    }
+  });
 }
 
 function buildMarkdownReport(a: Analysis, aiText: string): string {
