@@ -23,7 +23,7 @@
     "theme": "dark"
   },
   "engines": { "vscode": "^1.116.0" },
-  "categories": ["Other", "Debuggers", "Visualization"],
+  "categories": ["Other", "Visualization"],
   "keywords": [
     "salesforce",
     "apex",

@@ -3,6 +3,7 @@ src/**
 out/**
 .vscode/**
 .vscode-test/**
+.vscode-test.mjs
 .github/**
 node_modules/**
 tsconfig.json
@@ -13,9 +14,18 @@ eslint.config.*
 .gitattributes
 .editorconfig
 
+# Template boilerplate from `yo code`
+vsc-extension-quickstart.md
+
+# Screenshots are loaded via GitHub raw URLs; no need to ship them in the VSIX
+docs/**
+
+# Source maps — never ship these
+dist/**/*.map
+**/*.map
+
 # Dev files
 **/*.ts
-**/*.map
 **/tsconfig.json
 **/.eslintrc.json
 
@@ -24,9 +34,6 @@ eslint.config.*
 **/*.test.ts
 **/test/**
 
-# Docs screenshots (optional — exclude if you want a smaller package)
-# docs/**
-
 # OS junk
 .DS_Store
 **/.DS_Store
@@ -34,11 +41,3 @@ Thumbs.db
 
 # Build artifacts
 *.vsix
-
-# Keep these
-!dist/**
-!images/**
-!LICENSE
-!README.md
-!CHANGELOG.md
-!package.json
