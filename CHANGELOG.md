@@ -1,3 +1,11 @@
+## [0.3.1] — 2026-04-24
+
+### Changed
+
+- Refreshed all README screenshots to reflect the latest UI
+- Added dedicated sections for Activity Timeline, tabular data view, and Live Log Streaming
+- Added install instructions for Cursor / VSCodium / Gitpod via Open VSX
+
 # Changelog
 
 All notable changes to Apex Doctor will be documented in this file.
