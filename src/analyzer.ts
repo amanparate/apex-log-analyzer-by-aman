@@ -1,5 +1,7 @@
 import { ParsedLog, LogEvent } from './parser';
 import * as vscode from 'vscode';
+import { Insight, generateInsights } from './insights';
+
 
 export interface Issue {
   severity: 'fatal' | 'error' | 'warning' | 'info';
@@ -43,10 +45,10 @@ export interface Analysis {
   codeUnits: { name: string; durationMs: number; timestamp: string }[];
   userInfo?: { Name: string; Username: string; Email: string; ProfileName?: string };
   flameRoot: FlameNode;
-  insights: import('./insights').Insight[];
+  insights: Insight[];
 }
 
-export class apexDoctor {
+export class ApexDoctor {
   analyze(parsed: ParsedLog): Analysis {
     const issues: Issue[] = [];
     const soql: SoqlEntry[] = [];
@@ -341,7 +343,6 @@ export class apexDoctor {
 
     // Compute insights from the preliminary analysis, then populate
      
-    const { generateInsights } = require('./insights');
     preliminary.insights = generateInsights(preliminary);
 
     return preliminary;

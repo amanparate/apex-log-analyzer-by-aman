@@ -1,4 +1,3 @@
-import { spawn, ChildProcess } from 'child_process';
 import * as vscode from 'vscode';
 import { SalesforceService, ApexLogRecord } from './salesforceService';
 
@@ -9,25 +8,27 @@ export interface StreamEvent {
 type Listener = (event: StreamEvent) => void;
 type StatusListener = (running: boolean, message?: string) => void;
 
+const POLL_INTERVAL_MS = 3000;
+
 export class StreamingService {
-  private process: ChildProcess | undefined;
+  private isActive = false;
   private seenIds = new Set<string>();
   private listeners: Listener[] = [];
   private statusListeners: StatusListener[] = [];
   private pollTimer: NodeJS.Timeout | undefined;
-  private lastPollTime: Date = new Date();
+  private streamStartedAt: Date = new Date();
 
   constructor(private sf: SalesforceService) {}
 
   isRunning(): boolean {
-    return this.process !== undefined;
+    return this.isActive;
   }
 
   onLog(listener: Listener): vscode.Disposable {
     this.listeners.push(listener);
     return new vscode.Disposable(() => {
       const idx = this.listeners.indexOf(listener);
-      if (idx >= 0) {this.listeners.splice(idx, 1);}
+      if (idx >= 0) { this.listeners.splice(idx, 1); }
     });
   }
 
@@ -35,7 +36,7 @@ export class StreamingService {
     this.statusListeners.push(listener);
     return new vscode.Disposable(() => {
       const idx = this.statusListeners.indexOf(listener);
-      if (idx >= 0) {this.statusListeners.splice(idx, 1);}
+      if (idx >= 0) { this.statusListeners.splice(idx, 1); }
     });
   }
 
@@ -44,12 +45,13 @@ export class StreamingService {
   }
 
   private emitStatus(running: boolean, message?: string) {
-    for (const l of this.statusListeners) {l(running, message);}
+    for (const l of this.statusListeners) { l(running, message); }
   }
 
   async start(): Promise<void> {
-    if (this.process) {
-      vscode.window.showInformationMessage('Log streaming is already running.');
+    if (this.isActive) {
+      // Already running — just re-emit status so any newly-mounted listeners refresh
+      this.emitStatus(true, `Streaming (polling every ${POLL_INTERVAL_MS / 1000}s)`);
       return;
     }
 
@@ -59,56 +61,37 @@ export class StreamingService {
       return;
     }
 
-    const config = vscode.workspace.getConfiguration('apexDoctor');
-    const debugLevel = (config.get<string>('streamDebugLevel') || '').trim();
-
+    // Fresh window on each start — logs that arrived during a paused stream
+    // shouldn't surface when streaming resumes.
     this.seenIds.clear();
-    this.lastPollTime = new Date(Date.now() - 60_000); // start with last minute's logs
+    this.streamStartedAt = new Date(Date.now() - 60_000); // also catch logs from ~1 min ago
 
-    // Approach: use polling via Tooling API, which is simpler and more reliable
-    // than parsing sf apex tail output (format varies by CLI version)
+    this.isActive = true;
     this.emitStatus(true, 'Starting…');
 
-    // Dummy "process" object to mark running state without spawning a real tail
-    // (we poll the Tooling API instead for cross-platform reliability)
-    this.process = { kill: () => {} } as unknown as ChildProcess;
+    this.pollTimer = setInterval(
+      () => this.pollForNewLogs().catch(() => { /* swallow */ }),
+      POLL_INTERVAL_MS,
+    );
 
-    // Also try to spawn the real tail in the background to activate streaming trace flags.
-    // If it fails, polling still works.
-    try {
-      const args = ['apex', 'tail', 'log', '--target-org', org];
-      if (debugLevel) { args.push('--debug-level', debugLevel); }
-      const child = spawn('sf', args, { shell: true });
-      child.on('error', () => { /* ignore; polling covers us */ });
-      // Keep child alive but don't listen — we use polling for data
-      this.process = child;
-    } catch {
-      // Continue with polling-only mode
-    }
-
-    // Poll every 3 seconds for new logs
-    const pollInterval = 3000;
-    this.pollTimer = setInterval(() => this.pollForNewLogs().catch(() => { /* swallow */ }), pollInterval);
-
-    // Do one immediate poll so something shows up fast
+    // Immediate first poll so the UI doesn't sit empty for 3 seconds
     this.pollForNewLogs().catch(() => { /* swallow */ });
 
-    this.emitStatus(true, `Streaming (polling every ${pollInterval / 1000}s)`);
+    this.emitStatus(true, `Streaming (polling every ${POLL_INTERVAL_MS / 1000}s)`);
   }
 
   private async pollForNewLogs() {
-    if (!this.process) {return;}
+    if (!this.isActive) { return; }
     try {
       const logs = await this.sf.listRecentLogs(20);
-      // Sort ascending by StartTime so we emit in order
+      // Sort ascending by StartTime so we emit in chronological order
       const sorted = [...logs].sort(
-        (a, b) => new Date(a.StartTime).getTime() - new Date(b.StartTime).getTime()
+        (a, b) => new Date(a.StartTime).getTime() - new Date(b.StartTime).getTime(),
       );
       for (const log of sorted) {
-        if (this.seenIds.has(log.Id)) {continue;}
+        if (this.seenIds.has(log.Id)) { continue; }
         this.seenIds.add(log.Id);
-        // Skip logs older than when we started
-        if (new Date(log.StartTime).getTime() < this.lastPollTime.getTime()) {continue;}
+        if (new Date(log.StartTime).getTime() < this.streamStartedAt.getTime()) { continue; }
         this.emit(log);
       }
     } catch (e: any) {
@@ -121,10 +104,7 @@ export class StreamingService {
       clearInterval(this.pollTimer);
       this.pollTimer = undefined;
     }
-    if (this.process) {
-      try { this.process.kill(); } catch { /* ignore */ }
-      this.process = undefined;
-    }
+    this.isActive = false;
     this.emitStatus(false);
   }
 

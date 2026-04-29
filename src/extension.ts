@@ -1,7 +1,6 @@
 import * as vscode from "vscode";
 import { ApexLogParser } from "./parser";
-import { apexDoctor, Analysis } from "./analyzer";
-import { SalesforceService, ApexLogRecord } from "./salesforceService";
+import { ApexDoctor, Analysis } from "./analyzer";
 import { AiService } from "./aiService";
 import { renderAnalysisHtml } from "./webview";
 import { StreamingService } from "./streamingService";
@@ -9,6 +8,13 @@ import { StreamView } from "./streamView";
 import { ApexClassResolver } from "./apexClassResolver";
 import { CompareService } from "./compareService";
 import { renderComparisonHtml, buildComparisonMarkdown } from "./compareView";
+import { TraceFlagView } from "./traceFlagView";
+import {
+  SalesforceService,
+  ApexLogRecord,
+  UserSummary,
+  DebugLevel,
+} from "./salesforceService";
 
 let currentPanel: vscode.WebviewPanel | undefined;
 let currentAnalysis: Analysis | undefined;
@@ -16,13 +22,130 @@ let currentLogUri: vscode.Uri | undefined;
 
 export function activate(context: vscode.ExtensionContext) {
   const parser = new ApexLogParser();
-  const analyzer = new apexDoctor();
+  const analyzer = new ApexDoctor();
   const sf = new SalesforceService();
   const ai = new AiService(context.secrets);
   const classResolver = new ApexClassResolver();
   const compareService = new CompareService();
   const streaming = new StreamingService(sf);
   const streamView = new StreamView();
+  const traceFlagView = new TraceFlagView();
+
+  const refreshTraceFlags = async () => {
+    try {
+      traceFlagView.setBusy(true, "Loading trace flags…");
+      const flags = await sf.listActiveTraceFlags();
+      traceFlagView.setFlags(flags);
+    } catch (e: any) {
+      vscode.window.showErrorMessage(
+        `Could not load trace flags: ${e.message}`,
+      );
+    } finally {
+      traceFlagView.setBusy(false);
+    }
+  };
+
+  traceFlagView.onRefresh(refreshTraceFlags);
+
+  traceFlagView.onNewTrace(async () => {
+    try {
+      const user = await pickUser(sf);
+      if (!user) {
+        return;
+      }
+      const minutes = await pickDuration();
+      if (!minutes) {
+        return;
+      }
+      const debugLevel = await pickDebugLevel(sf);
+      if (!debugLevel) {
+        return;
+      }
+      traceFlagView.setBusy(true, `Creating trace flag for ${user.Name}…`);
+      try {
+        await sf.createTraceFlag(user.Id, debugLevel.Id, minutes);
+        vscode.window.showInformationMessage(
+          `Now tracing ${user.Name} for ${formatMinutes(minutes)}. Watch the Live Stream for their logs.`,
+        );
+      } catch (e: any) {
+        const msg = String(e.message || e);
+        // Detect duplicate-trace error and offer to extend the existing one
+        if (/DUPLICATE_VALUE|already.*active/i.test(msg)) {
+          const choice = await vscode.window.showWarningMessage(
+            `${user.Name} already has an active trace flag. Extend it by 1 hour instead?`,
+            "Extend by 1h",
+            "Cancel",
+          );
+          if (choice === "Extend by 1h") {
+            const flags = await sf.listActiveTraceFlags();
+            const existing = flags.find((f) => f.TracedEntityId === user.Id);
+            if (existing) {
+              await sf.extendTraceFlag(
+                existing.Id,
+                existing.ExpirationDate,
+                60,
+              );
+              vscode.window.showInformationMessage(
+                `Extended trace for ${user.Name} by 1 hour.`,
+              );
+            }
+          }
+        } else {
+          vscode.window.showErrorMessage(`Trace flag creation failed: ${msg}`);
+        }
+      }
+    } finally {
+      traceFlagView.setBusy(false);
+      refreshTraceFlags();
+    }
+  });
+
+  traceFlagView.onDelete(async (flagId) => {
+    const choice = await vscode.window.showWarningMessage(
+      "Delete this trace flag? Logs will stop being captured for this user.",
+      { modal: true },
+      "Delete",
+    );
+    if (choice !== "Delete") {
+      return;
+    }
+    traceFlagView.setBusy(true, "Deleting…");
+    try {
+      await sf.deleteTraceFlag(flagId);
+    } catch (e: any) {
+      vscode.window.showErrorMessage(`Delete failed: ${e.message}`);
+    } finally {
+      traceFlagView.setBusy(false);
+      refreshTraceFlags();
+    }
+  });
+
+  traceFlagView.onExtend(async (flagId, expirationIso, minutes) => {
+    traceFlagView.setBusy(true, `Extending by ${formatMinutes(minutes)}…`);
+    try {
+      const result = await sf.extendTraceFlag(flagId, expirationIso, minutes);
+      const newDate = new Date(result.newExpirationIso);
+      const proposed = new Date(expirationIso).getTime() + minutes * 60_000;
+      if (newDate.getTime() < proposed) {
+        vscode.window.showInformationMessage(
+          `Capped at the 24-hour Salesforce limit. New expiration: ${newDate.toLocaleString()}.`,
+        );
+      }
+    } catch (e: any) {
+      vscode.window.showErrorMessage(`Extend failed: ${e.message}`);
+    } finally {
+      traceFlagView.setBusy(false);
+      refreshTraceFlags();
+    }
+  });
+
+  const traceFlagsCmd = vscode.commands.registerCommand(
+    "apexDoctor.manageTraceFlags",
+    () => {
+      traceFlagView.show(context);
+      refreshTraceFlags();
+    },
+  );
 
   // Status bar indicator
   const statusBarItem = vscode.window.createStatusBarItem(
@@ -117,8 +240,14 @@ export function activate(context: vscode.ExtensionContext) {
     }
   });
 
+  streamView.onStartRequested(() => {
+    vscode.commands.executeCommand("apexDoctor.startStream");
+  });
   streamView.onStopRequested(() => {
-    streaming.stop();
+    vscode.commands.executeCommand("apexDoctor.stopStream");
+  });
+  streamView.onTraceUser(() => {
+    vscode.commands.executeCommand("apexDoctor.manageTraceFlags");
   });
 
   context.subscriptions.push({ dispose: () => streaming.dispose() });
@@ -296,6 +425,7 @@ export function activate(context: vscode.ExtensionContext) {
     startStreamCmd,
     stopStreamCmd,
     compareCmd,
+    traceFlagsCmd,
   );
 }
 
@@ -321,7 +451,7 @@ async function analyzeText(
   text: string,
   uri: vscode.Uri,
   parser: ApexLogParser,
-  analyzer: apexDoctor,
+  analyzer: ApexDoctor,
   ai: AiService,
   sf: SalesforceService,
   classResolver: ApexClassResolver,
@@ -363,7 +493,11 @@ function openAnalysisPanel(
     "apexLogAnalysis",
     "Apex Doctor",
     vscode.ViewColumn.Beside,
-    { enableScripts: true, retainContextWhenHidden: true },
+    {
+      enableScripts: true,
+      retainContextWhenHidden: true,
+      enableFindWidget: true,
+    },
   );
   currentPanel = panel;
   panel.webview.html = renderAnalysisHtml(analysis);
@@ -502,7 +636,7 @@ async function jumpToLogLine(line: number) {
 
 async function runCompareFlow(
   parser: ApexLogParser,
-  analyzer: apexDoctor,
+  analyzer: ApexDoctor,
   compareService: CompareService,
 ) {
   const candidates = await collectLogCandidates();
@@ -605,7 +739,7 @@ async function collectLogCandidates(): Promise<LogCandidate[]> {
     candidates.push({
       key,
       label,
-      description: `${(doc.getText().length / 1024).toFixed(1)} KB`,
+      description: `${(Buffer.byteLength(doc.getText(), "utf8") / 1024).toFixed(1)} KB`,
       detail: doc.isUntitled ? "Untitled tab" : fsPath,
       getText: async () => doc.getText(),
     });
@@ -645,7 +779,11 @@ function showComparisonPanel(
     "apexLogCompare",
     `📊 Compare: ${comparison.summary.baseline.label} vs ${comparison.summary.comparison.label}`,
     vscode.ViewColumn.Beside,
-    { enableScripts: true, retainContextWhenHidden: true },
+    {
+      enableScripts: true,
+      retainContextWhenHidden: true,
+      enableFindWidget: true,
+    },
   );
   panel.webview.html = renderComparisonHtml(comparison);
   panel.webview.onDidReceiveMessage(async (msg) => {
@@ -751,6 +889,120 @@ function buildMarkdownReport(a: Analysis, aiText: string): string {
   }
 
   return lines.join("\n");
+}
+
+// ---- Trace flag UI helpers ----
+
+async function pickUser(
+  sf: SalesforceService,
+): Promise<UserSummary | undefined> {
+  const query = await vscode.window.showInputBox({
+    prompt: "Search for the user to trace (by name, username, or email)",
+    placeHolder: "e.g. Jane Doe or jane@example.com",
+    ignoreFocusOut: true,
+  });
+  if (!query || !query.trim()) {
+    return undefined;
+  }
+
+  const users = await vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: `Searching for "${query}"…`,
+    },
+    async () => sf.searchUsers(query.trim(), 25),
+  );
+
+  if (!users.length) {
+    vscode.window.showWarningMessage(`No active users matched "${query}".`);
+    return undefined;
+  }
+
+  const picked = await vscode.window.showQuickPick(
+    users.map((u) => ({
+      label: `$(person) ${u.Name}`,
+      description: u.Profile?.Name ?? "",
+      detail: `${u.Username} · ${u.Email}`,
+      user: u,
+    })),
+    {
+      placeHolder: "Select a user to trace",
+      matchOnDescription: true,
+      matchOnDetail: true,
+    },
+  );
+  return picked?.user;
+}
+
+async function pickDuration(): Promise<number | undefined> {
+  const choices: { label: string; description?: string; minutes: number }[] = [
+    { label: "30 minutes", minutes: 30 },
+    { label: "1 hour", minutes: 60 },
+    { label: "4 hours", minutes: 240 },
+    { label: "8 hours", minutes: 480 },
+    { label: "24 hours", description: "Salesforce maximum", minutes: 1440 },
+  ];
+  const picked = await vscode.window.showQuickPick(choices, {
+    placeHolder: "How long should the trace flag stay active?",
+  });
+  return picked?.minutes;
+}
+
+async function pickDebugLevel(
+  sf: SalesforceService,
+): Promise<DebugLevel | undefined> {
+  const levels = await vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: "Loading debug levels…",
+    },
+    async () => sf.listDebugLevels(),
+  );
+
+  if (!levels.length) {
+    vscode.window.showWarningMessage(
+      "No debug levels found in the org. Create one in Setup → Debug Levels first.",
+    );
+    return undefined;
+  }
+
+  // Float the standard Dev Console level to the top — it's what most people want
+  const sorted = [...levels].sort((a, b) => {
+    if (a.DeveloperName === "SFDC_DevConsole") {
+      return -1;
+    }
+    if (b.DeveloperName === "SFDC_DevConsole") {
+      return 1;
+    }
+    return a.DeveloperName.localeCompare(b.DeveloperName);
+  });
+
+  const picked = await vscode.window.showQuickPick(
+    sorted.map((d) => ({
+      label: `$(debug) ${d.DeveloperName}`,
+      description: `Apex: ${d.ApexCode} · DB: ${d.Database}`,
+      detail: `System: ${d.System} · Profiling: ${d.ApexProfiling} · Callout: ${d.Callout}`,
+      level: d,
+    })),
+    {
+      placeHolder: "Select a debug level (controls what gets logged)",
+      matchOnDescription: true,
+      matchOnDetail: true,
+    },
+  );
+  return picked?.level;
+}
+
+function formatMinutes(minutes: number): string {
+  if (minutes < 60) {
+    return `${minutes} minute${minutes === 1 ? "" : "s"}`;
+  }
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  if (mins === 0) {
+    return `${hours} hour${hours === 1 ? "" : "s"}`;
+  }
+  return `${hours}h ${mins}m`;
 }
 
 export function deactivate() {

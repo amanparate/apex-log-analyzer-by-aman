@@ -68,7 +68,6 @@ export function renderAreaChartHtml(root: FlameNode): string {
   const paths: string[] = [];
   const runningTop = new Array(numBuckets).fill(chartHeight); // y starts at bottom
   for (const kind of kinds) {
-    const points: string[] = [];
     const topPoints: string[] = [];
     const bottomPoints: string[] = [];
 

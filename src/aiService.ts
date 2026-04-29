@@ -5,37 +5,78 @@ import { Analysis, Issue } from "./analyzer";
 const API_VERSION_ANTHROPIC = "2023-06-01";
 const SECRET_KEY = "apexDoctor.apiKey";
 
-type Provider = "openrouter" | "anthropic";
+type Provider = "openrouter" | "anthropic" | "openai" | "gemini";
+
+interface ProviderConfig {
+  label: string;
+  keyHint: string;
+  validateKey: (key: string) => string | null;
+  defaultModel: string;
+}
+
+const PROVIDERS: Record<Provider, ProviderConfig> = {
+  openrouter: {
+    label: "OpenRouter",
+    keyHint: "Starts with sk-or-. Get one FREE at openrouter.ai/keys",
+    validateKey: (k) =>
+      k.startsWith("sk-or-") ? null : "Must start with sk-or-",
+    defaultModel: "openrouter/free",
+  },
+  anthropic: {
+    label: "Anthropic (Claude)",
+    keyHint: "Starts with sk-ant-. Get one at console.anthropic.com",
+    validateKey: (k) =>
+      k.startsWith("sk-ant-") ? null : "Must start with sk-ant-",
+    defaultModel: "claude-sonnet-4-5",
+  },
+  openai: {
+    label: "OpenAI (ChatGPT)",
+    keyHint: "Starts with sk-. Get one at platform.openai.com/api-keys",
+    validateKey: (k) => {
+      if (!k.startsWith("sk-")) {
+        return "Must start with sk-";
+      }
+      if (k.startsWith("sk-or-") || k.startsWith("sk-ant-")) {
+        return "That looks like an OpenRouter or Anthropic key — change provider in settings first";
+      }
+      return null;
+    },
+    defaultModel: "gpt-4o-mini",
+  },
+  gemini: {
+    label: "Google Gemini",
+    keyHint: "Starts with AIza. Get one FREE at aistudio.google.com/apikey",
+    validateKey: (k) => (k.startsWith("AIza") ? null : "Must start with AIza"),
+    defaultModel: "gemini-2.0-flash",
+  },
+};
 
 export class AiService {
   constructor(private secrets: vscode.SecretStorage) {}
 
   private getProvider(): Provider {
     const config = vscode.workspace.getConfiguration("apexDoctor");
-    return (config.get<string>("provider") || "openrouter") as Provider;
+    const p = (config.get<string>("provider") || "openrouter") as Provider;
+    return PROVIDERS[p] ? p : "openrouter";
   }
 
   async setApiKey(): Promise<boolean> {
     const provider = this.getProvider();
-    const label = provider === "anthropic" ? "Anthropic" : "OpenRouter";
-    const hint =
-      provider === "anthropic"
-        ? "Starts with sk-ant-. Get one at console.anthropic.com"
-        : "Starts with sk-or-. Get one FREE at openrouter.ai/keys";
-    const prefix = provider === "anthropic" ? "sk-ant-" : "sk-or-";
+    const cfg = PROVIDERS[provider];
 
     const key = await vscode.window.showInputBox({
-      prompt: `Enter your ${label} API key. ${hint}`,
+      prompt: `Enter your ${cfg.label} API key. ${cfg.keyHint}`,
       password: true,
       ignoreFocusOut: true,
-      validateInput: (v) =>
-        v && v.startsWith(prefix) ? null : `Must start with ${prefix}`,
+      validateInput: (v) => (v ? cfg.validateKey(v) : "API key is required"),
     });
     if (!key) {
       return false;
     }
     await this.secrets.store(SECRET_KEY, key);
-    vscode.window.showInformationMessage(`${label} API key saved securely.`);
+    vscode.window.showInformationMessage(
+      `${cfg.label} API key saved securely.`,
+    );
     return true;
   }
 
@@ -187,34 +228,42 @@ ${context}`;
 
     const config = vscode.workspace.getConfiguration("apexDoctor");
     const provider = this.getProvider();
-    const model =
-      config.get<string>("model") ||
-      (provider === "anthropic"
-        ? "claude-sonnet-4-5"
-        : "google/gemini-2.0-flash-exp:free");
+
+    // Defensive: catch the case where the saved key doesn't match the current provider
+    const validation = PROVIDERS[provider].validateKey(apiKey);
+    if (validation) {
+      onError(
+        `Saved API key doesn't match provider "${provider}": ${validation}. Run "Apex Doctor: Clear LLM API Key" then "Set LLM API Key", or change the provider in settings.`,
+      );
+      return;
+    }
+
+    const model = config.get<string>("model") || PROVIDERS[provider].defaultModel;
     const maxTokens = config.get<number>("maxTokens") || 1500;
     const prompt = this.buildPrompt(analysis, focusIssue);
 
-    if (provider === "anthropic") {
-      this.streamAnthropic(
-        apiKey,
-        model,
-        maxTokens,
-        prompt,
-        onChunk,
-        onDone,
-        onError,
-      );
-    } else {
-      this.streamOpenRouter(
-        apiKey,
-        model,
-        maxTokens,
-        prompt,
-        onChunk,
-        onDone,
-        onError,
-      );
+    switch (provider) {
+      case "anthropic":
+        return this.streamAnthropic(apiKey, model, maxTokens, prompt, onChunk, onDone, onError);
+      case "openrouter":
+        return this.streamOpenAICompat(
+          {
+            host: "openrouter.ai",
+            path: "/api/v1/chat/completions",
+            extraHeaders: {
+              "HTTP-Referer": "https://github.com/amanparate/apex-doctor",
+              "X-Title": "Apex Doctor",
+            },
+          },
+          apiKey, model, maxTokens, prompt, onChunk, onDone, onError,
+        );
+      case "openai":
+        return this.streamOpenAICompat(
+          { host: "api.openai.com", path: "/v1/chat/completions" },
+          apiKey, model, maxTokens, prompt, onChunk, onDone, onError,
+        );
+      case "gemini":
+        return this.streamGemini(apiKey, model, maxTokens, prompt, onChunk, onDone, onError);
     }
   }
 
@@ -291,7 +340,9 @@ ${context}`;
     req.end();
   }
 
-  private streamOpenRouter(
+  /** Shared OpenAI-compatible SSE handler — used for both OpenRouter and OpenAI */
+  private streamOpenAICompat(
+    target: { host: string; path: string; extraHeaders?: Record<string, string> },
     apiKey: string,
     model: string,
     maxTokens: number,
@@ -308,15 +359,14 @@ ${context}`;
     });
     const req = https.request(
       {
-        host: "openrouter.ai",
-        path: "/api/v1/chat/completions",
+        host: target.host,
+        path: target.path,
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${apiKey}`,
-          "HTTP-Referer": "https://github.com/aman/apex-log-analyzer-by-aman",
-          "X-Title": "Apex Doctor",
           "Content-Length": Buffer.byteLength(body),
+          ...(target.extraHeaders || {}),
         },
       },
       (res) => {
@@ -349,7 +399,73 @@ ${context}`;
                   onChunk(delta);
                 }
               } catch {
-                /* ignore keepalives / malformed lines */
+                /* ignore keepalives / malformed */
+              }
+            }
+          }
+        });
+        res.on("end", () => onDone(fullText));
+      },
+    );
+    req.on("error", (e) => onError(e.message));
+    req.write(body);
+    req.end();
+  }
+
+  private streamGemini(
+    apiKey: string,
+    model: string,
+    maxTokens: number,
+    prompt: string,
+    onChunk: (t: string) => void,
+    onDone: (t: string) => void,
+    onError: (e: string) => void,
+  ) {
+    const body = JSON.stringify({
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      generationConfig: { maxOutputTokens: maxTokens },
+    });
+    const req = https.request(
+      {
+        host: "generativelanguage.googleapis.com",
+        path: `/v1beta/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse&key=${encodeURIComponent(apiKey)}`,
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(body),
+        },
+      },
+      (res) => {
+        if (res.statusCode && res.statusCode >= 400) {
+          let errBody = "";
+          res.on("data", (c) => (errBody += c.toString()));
+          res.on("end", () => onError(`HTTP ${res.statusCode}: ${errBody}`));
+          return;
+        }
+        let buffer = "";
+        let fullText = "";
+        res.on("data", (chunk: Buffer) => {
+          buffer += chunk.toString();
+          const parts = buffer.split("\n\n");
+          buffer = parts.pop() || "";
+          for (const part of parts) {
+            for (const line of part.split("\n")) {
+              if (!line.startsWith("data:")) {
+                continue;
+              }
+              const payload = line.slice(5).trim();
+              if (!payload) {
+                continue;
+              }
+              try {
+                const evt = JSON.parse(payload);
+                const text = evt.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (typeof text === "string" && text.length > 0) {
+                  fullText += text;
+                  onChunk(text);
+                }
+              } catch {
+                /* ignore */
               }
             }
           }
