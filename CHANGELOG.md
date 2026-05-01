@@ -5,6 +5,19 @@ All notable changes to Apex Doctor will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] — 2026-05-01
+
+### Added
+
+- **📜 Execution-path diff (line-level log diff)** — the Compare Two Logs view now includes an event-by-event diff of significant log events: METHOD_ENTRY, SOQL, DML, code units, debugs, exceptions, callouts, test pass/fail. LCS-based, so insertions / removals / changed events show up exactly where they diverge, with green/red/amber highlighting and per-row markers (`+ − ~`). Reveals "the optimisation skipped the validator entirely" or "the second run took the else branch" — questions the summary deltas can't answer alone.
+- **🧪 Anonymous Apex playground** — write Apex in a scratch editor, click "▶ Run with Apex Doctor" in the status bar (or run `Apex Doctor: Run This Anonymous Apex`), and the extension executes it via `sf apex run`, polls the org for the resulting log, downloads it, and analyses it — all in one progress dialog. Pair with the Trace Flag Manager so the running user has logging enabled.
+- New commands: `Apex Doctor: Open Anonymous Apex Editor`, `Apex Doctor: Run This Anonymous Apex`.
+- `SalesforceService.runAnonymousApex()` and `getMostRecentLogId()` for the run-and-analyse loop.
+
+### Tests
+
+- 31 passing (was 28). New coverage for the LCS line-diff: identical streams, single-event insertions, fingerprint stability across timestamp drift.
+
 ## [0.7.0] — 2026-05-01
 
 ### Added

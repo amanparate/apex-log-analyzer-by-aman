@@ -30,6 +30,12 @@ import { suggestFixForIssue, FixDiffContentProvider } from "./fixSuggestions";
 import { buildNlQueryPrompt, parseNlQueryResponse, NlQueryResult } from "./nlQuery";
 import { CoverageProvider } from "./coverageProvider";
 import { showQueryPlan } from "./queryPlanView";
+import {
+  openAnonymousEditor,
+  runAnonymousApex,
+  refreshStatusBarVisibility,
+  disposeStatusBarItem,
+} from "./anonymousApex";
 
 let currentPanel: vscode.WebviewPanel | undefined;
 let currentAnalysis: Analysis | undefined;
@@ -633,6 +639,48 @@ export function activate(context: vscode.ExtensionContext) {
     },
   );
 
+  const openAnonymousEditorCmd = vscode.commands.registerCommand(
+    "apexDoctor.openAnonymousEditor",
+    async () => {
+      await openAnonymousEditor();
+    },
+  );
+
+  const runAnonymousApexCmd = vscode.commands.registerCommand(
+    "apexDoctor.runAnonymousApex",
+    async () => {
+      try {
+        await runAnonymousApex(sf, async (logFilePath: string) => {
+          const uri = vscode.Uri.file(logFilePath);
+          const doc = await vscode.workspace.openTextDocument(uri);
+          await vscode.window.showTextDocument(doc, {
+            viewColumn: vscode.ViewColumn.One,
+            preview: false,
+          });
+          await analyzeText(
+            context,
+            doc.getText(),
+            uri,
+            parser,
+            analyzer,
+            ai,
+            sf,
+            classResolver,
+          );
+        });
+      } catch (e: any) {
+        vscode.window.showErrorMessage(`Run failed: ${e.message}`);
+      }
+    },
+  );
+
+  // Show/hide the "Run with Apex Doctor" status-bar item based on the active editor
+  context.subscriptions.push(
+    vscode.window.onDidChangeActiveTextEditor(() => refreshStatusBarVisibility()),
+    { dispose: () => disposeStatusBarItem() },
+  );
+  refreshStatusBarVisibility();
+
   context.subscriptions.push(
     analyzeCmd,
     fetchLogCmd,
@@ -647,6 +695,8 @@ export function activate(context: vscode.ExtensionContext) {
     refreshCoverageCmd,
     toggleCoverageCmd,
     queryPlanCmd,
+    openAnonymousEditorCmd,
+    runAnonymousApexCmd,
   );
 }
 
@@ -991,13 +1041,16 @@ async function runCompareFlow(
     async () => {
       const baselineText = await baseline.candidate.getText();
       const comparisonText = await comparison.candidate.getText();
-      const baselineAnalysis = analyzer.analyze(parser.parse(baselineText));
-      const comparisonAnalysis = analyzer.analyze(parser.parse(comparisonText));
+      const baselineParsed = parser.parse(baselineText);
+      const comparisonParsed = parser.parse(comparisonText);
+      const baselineAnalysis = analyzer.analyze(baselineParsed);
+      const comparisonAnalysis = analyzer.analyze(comparisonParsed);
       const diff = compareService.compare(
         baselineAnalysis,
         comparisonAnalysis,
         baseline.candidate.label,
         comparison.candidate.label,
+        { baseline: baselineParsed, comparison: comparisonParsed },
       );
       showComparisonPanel(diff);
     },

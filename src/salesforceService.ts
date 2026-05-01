@@ -383,6 +383,59 @@ export class SalesforceService {
     }));
   }
 
+  /**
+   * Execute an anonymous Apex file via `sf apex run --file`.
+   * Returns the raw stdout (which contains exec status + any debug output
+   * from the synchronous response).
+   */
+  async runAnonymousApex(
+    filePath: string,
+    targetOrg?: string,
+  ): Promise<{ stdout: string; success: boolean }> {
+    const org = targetOrg || (await this.getDefaultOrg());
+    if (!org) {
+      throw new Error("No default Salesforce org found. Run: sf org login web");
+    }
+    try {
+      const { stdout } = await execAsync(
+        `sf apex run --file "${filePath}" --target-org ${org}`,
+        { maxBuffer: 20 * 1024 * 1024 },
+      );
+      // 'sf apex run' exits 0 on success; failures throw and get caught below.
+      return { stdout, success: true };
+    } catch (e: any) {
+      return {
+        stdout: (e.stdout || "") + (e.stderr || e.message || ""),
+        success: false,
+      };
+    }
+  }
+
+  /**
+   * Return the most recent ApexLog created by the running CLI user, optionally
+   * filtered by a minimum StartTime to avoid picking up unrelated logs.
+   */
+  async getMostRecentLogId(
+    sinceIso?: string,
+    targetOrg?: string,
+  ): Promise<string | undefined> {
+    const org = targetOrg || (await this.getDefaultOrg());
+    if (!org) {
+      throw new Error("No default Salesforce org found.");
+    }
+    let soql =
+      "SELECT Id, StartTime FROM ApexLog";
+    if (sinceIso) {
+      soql += ` WHERE StartTime >= ${sinceIso}`;
+    }
+    soql += " ORDER BY StartTime DESC LIMIT 1";
+    const { stdout } = await execAsync(
+      `sf data query --query "${soql}" --use-tooling-api --target-org ${org} --json`,
+    );
+    const records = JSON.parse(stdout)?.result?.records ?? [];
+    return records[0]?.Id;
+  }
+
   /** Retrieve an Apex class from the org into the local SFDX project. */
   async retrieveClass(className: string, targetOrg?: string): Promise<void> {
     const org = targetOrg || (await this.getDefaultOrg());

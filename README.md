@@ -10,6 +10,8 @@
 
 Paste any Salesforce Apex debug log into VS Code, right-click, and get an instant, structured breakdown:
 
+- 📜 **Execution-path diff** — when you compare two logs, see an event-by-event diff (additions / removals / changed) so you can spot _which branches_ ran differently, not just the summary deltas.
+- 🧪 **Anonymous Apex playground** — write Apex, click "Run with Apex Doctor" in the status bar; the extension executes it via `sf apex run`, fetches the resulting log, and analyses it in one click.
 - 🔎 **SOQL Query Plan** — every SOQL row has a "Plan" button. One click runs Salesforce's Query Plan tool, surfaces selectivity, and warns about full table scans.
 - 🧪 **Test coverage overlay** — when a `.cls` is open, see covered / uncovered lines directly in the gutter, with a status-bar % for the class.
 - 💬 **Ask the Log (natural language)** — _"show me SOQL that returned > 500 rows"_, _"methods after the exception"_, _"debugs from AccountHandler"_. LLM picks the right array; we hydrate the matched rows locally so nothing is fabricated.
@@ -36,6 +38,36 @@ Paste any Salesforce Apex debug log into VS Code, right-click, and get an instan
 - 🔀 **Compare two logs** — side-by-side diff for before / after optimisations
 - 🗂️ **Recent analyses** — last 10 analyses persisted per workspace, one click to reopen
 - 🤖 **AI root-cause + follow-up chat** — OpenRouter, Anthropic, OpenAI, or Google Gemini
+
+---
+
+## 📜 Execution-path diff (line-level)
+
+**New in v0.8.0** — the Compare Two Logs view now shows an **event-by-event diff** of the two runs. Where the summary tells you _"comparison is 34% faster"_, this tells you _why_:
+
+```
+  ▼ AccountTrigger on Account trigger event AfterUpdate    ← unchanged
+  → AccountHandler.processAccounts()                       ← unchanged
++ → AccountHandler.bulkifyContractLookup()                 ← new in comparison
+- SOQL: SELECT Id FROM Contract WHERE AccountId = :a.Id    ← removed (was in baseline)
+  SOQL: SELECT Id FROM Contract WHERE AccountId IN :ids    ← unchanged
+~ DML: Op:Update                              — Rows: 50 → 200
+```
+
+Backed by an LCS diff over a fingerprinted event stream — line numbers and record IDs are normalised so two runs match even when they touched different records. Renders inside the existing 📊 Log Comparison panel after the SOQL pattern table.
+
+---
+
+## 🧪 Anonymous Apex playground
+
+**New in v0.8.0** — write ad-hoc Apex inside VS Code and analyse the resulting log in one click:
+
+1. Run **`Apex Doctor: Open Anonymous Apex Editor`** — opens a scratch `.apex` file with a starter snippet
+2. Edit the code
+3. Click **▶ Run with Apex Doctor** in the status bar (or run `Apex Doctor: Run This Anonymous Apex`)
+4. Apex Doctor saves the file → executes it via `sf apex run` → polls the org for the new log → downloads it → analyses it — all in one progress dialog
+
+Pair it with the Trace Flag Manager so the running user has logging enabled. Works as a quick perf-experiment loop without leaving VS Code or opening Developer Console.
 
 ---
 

@@ -2,7 +2,7 @@
   "name": "apex-doctor",
   "displayName": "Apex Doctor",
   "description": "Diagnose Salesforce Apex debug logs in seconds. AI root-cause analysis, performance insights, live log streaming, SOQL-in-loop detection, activity timeline, and one-click navigation to Apex source.",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "publisher": "amanparate",
   "author": {
     "name": "Aman Parate",
@@ -54,7 +54,9 @@
       { "command": "apexDoctor.manageTraceFlags", "title": "Manage Trace Flags", "category": "Apex Doctor" },
       { "command": "apexDoctor.refreshCoverage", "title": "Refresh Test Coverage", "category": "Apex Doctor" },
       { "command": "apexDoctor.toggleCoverage", "title": "Toggle Coverage Overlay", "category": "Apex Doctor" },
-      { "command": "apexDoctor.queryPlan", "title": "Run SOQL Query Plan…", "category": "Apex Doctor" }
+      { "command": "apexDoctor.queryPlan", "title": "Run SOQL Query Plan…", "category": "Apex Doctor" },
+      { "command": "apexDoctor.openAnonymousEditor", "title": "Open Anonymous Apex Editor", "category": "Apex Doctor" },
+      { "command": "apexDoctor.runAnonymousApex", "title": "Run This Anonymous Apex", "category": "Apex Doctor" }
     ],
     "views": {
       "explorer": [
@@ -86,6 +88,8 @@
         { "command": "apexDoctor.refreshCoverage" },
         { "command": "apexDoctor.toggleCoverage" },
         { "command": "apexDoctor.queryPlan" },
+        { "command": "apexDoctor.openAnonymousEditor" },
+        { "command": "apexDoctor.runAnonymousApex" },
         { "command": "apexDoctor.openRecent", "when": "false" },
         { "command": "apexDoctor.removeRecent", "when": "false" }
       ]

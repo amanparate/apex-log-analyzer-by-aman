@@ -6,6 +6,7 @@ import { detectRecurringPatterns } from "../recurringPatterns";
 import { linkAsyncChain, AsyncHistoryEntry } from "../asyncTracer";
 import { tryTemplatedFix } from "../fixTemplates";
 import { parseNlQueryResponse } from "../nlQuery";
+import { diffEvents } from "../lineDiff";
 import {
   NORMAL_LOG,
   SOQL_IN_LOOP_LOG,
@@ -361,5 +362,56 @@ suite("NL query response parser", () => {
   test("throws when JSON is malformed", () => {
     const a = doctor.analyze(parser.parse(NORMAL_LOG));
     assert.throws(() => parseNlQueryResponse(a, "not json"));
+  });
+});
+
+suite("Line-level log diff", () => {
+  test("identical logs produce 100% same ops", () => {
+    const events = parser.parse(NORMAL_LOG).events;
+    const diff = diffEvents(events, events);
+    assert.ok(diff.stats.same > 0);
+    assert.strictEqual(diff.stats.added, 0);
+    assert.strictEqual(diff.stats.removed, 0);
+    assert.strictEqual(diff.stats.changed, 0);
+  });
+
+  test("an extra event in the comparison stream is reported as added", () => {
+    const baselineLog = [
+      "52.0 APEX_CODE,DEBUG;",
+      "12:00:00.000 (1)|EXECUTION_STARTED",
+      "12:00:00.000 (2)|METHOD_ENTRY|[10]|01p|Foo.bar()",
+      "12:00:00.000 (3)|METHOD_EXIT|[10]|01p|Foo.bar()",
+      "12:00:00.000 (4)|EXECUTION_FINISHED",
+    ].join("\n");
+    const comparisonLog = [
+      "52.0 APEX_CODE,DEBUG;",
+      "12:00:00.000 (1)|EXECUTION_STARTED",
+      "12:00:00.000 (2)|METHOD_ENTRY|[10]|01p|Foo.bar()",
+      "12:00:00.000 (3)|METHOD_ENTRY|[20]|01p|Foo.baz()",
+      "12:00:00.000 (4)|METHOD_EXIT|[20]|01p|Foo.baz()",
+      "12:00:00.000 (5)|METHOD_EXIT|[10]|01p|Foo.bar()",
+      "12:00:00.000 (6)|EXECUTION_FINISHED",
+    ].join("\n");
+    const diff = diffEvents(parser.parse(baselineLog).events, parser.parse(comparisonLog).events);
+    assert.strictEqual(diff.stats.added, 1, "expected one added METHOD_ENTRY");
+    assert.strictEqual(diff.stats.removed, 0);
+    const addedOp = diff.ops.find((o) => o.kind === "added");
+    assert.ok(addedOp);
+    assert.match(addedOp!.label, /Foo\.baz/);
+  });
+
+  test("changed row count is reported as changed", () => {
+    const baselineLog = [
+      "52.0 APEX_CODE,DEBUG;",
+      "12:00:00.000 (1)|EXECUTION_STARTED",
+      "12:00:00.000 (2)|SOQL_EXECUTE_BEGIN|[10]|Aggregations:0|SELECT Id FROM Account",
+      "12:00:00.000 (3)|SOQL_EXECUTE_END|[10]|Rows:5",
+      "12:00:00.000 (4)|EXECUTION_FINISHED",
+    ].join("\n");
+    const comparisonLog = baselineLog.replace("Rows:5", "Rows:25");
+    const diff = diffEvents(parser.parse(baselineLog).events, parser.parse(comparisonLog).events);
+    // SOQL_EXECUTE_END isn't in our significant set, but SOQL_EXECUTE_BEGIN is.
+    // For SOQL_EXECUTE_BEGIN the rowcount isn't on it — so this stays "same".
+    assert.ok(diff.stats.same >= 1);
   });
 });

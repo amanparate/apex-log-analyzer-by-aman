@@ -1,4 +1,6 @@
 import { Analysis, Issue, MethodEntry, SoqlEntry } from './analyzer';
+import { ParsedLog } from './parser';
+import { diffEvents, LineDiffResult } from './lineDiff';
 
 export interface ComparisonSummary {
   baseline: { label: string; durationMs: number; soqlCount: number; dmlCount: number; errorCount: number; warningCount: number; debugCount: number };
@@ -44,15 +46,26 @@ export interface Comparison {
   issues: IssueDiff;
   methods: MethodDelta[];
   soql: SoqlDelta[];
+  /** Optional event-by-event diff. Only set when raw parsed logs are available. */
+  lineDiff?: LineDiffResult;
 }
 
 export class CompareService {
-  compare(baseline: Analysis, comparison: Analysis, baselineLabel: string, comparisonLabel: string): Comparison {
+  compare(
+    baseline: Analysis,
+    comparison: Analysis,
+    baselineLabel: string,
+    comparisonLabel: string,
+    parsed?: { baseline: ParsedLog; comparison: ParsedLog },
+  ): Comparison {
     return {
       summary: this.buildSummary(baseline, comparison, baselineLabel, comparisonLabel),
       issues: this.diffIssues(baseline.issues, comparison.issues),
       methods: this.diffMethods(baseline.methods, comparison.methods),
-      soql: this.diffSoql(baseline.soql, comparison.soql)
+      soql: this.diffSoql(baseline.soql, comparison.soql),
+      lineDiff: parsed
+        ? diffEvents(parsed.baseline.events, parsed.comparison.events)
+        : undefined,
     };
   }
 

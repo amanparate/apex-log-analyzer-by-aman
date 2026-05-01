@@ -1,5 +1,48 @@
 import { Comparison } from './compareService';
 
+const escAttr = (s: string) =>
+  (s ?? '').replace(/[&<>"']/g, (ch) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]!));
+
+const MARKER: Record<string, string> = {
+  same: ' ',
+  added: '+',
+  removed: '−',
+  changed: '~',
+};
+
+function renderLineDiff(c: Comparison): string {
+  if (!c.lineDiff) {
+    return '';
+  }
+  const { ops, stats } = c.lineDiff;
+  const total = stats.same + stats.added + stats.removed + stats.changed;
+  if (total === 0) {
+    return '';
+  }
+  const rows = ops
+    .map(
+      (op) => `
+        <div class="linediff-row ${op.kind}">
+          <span class="linediff-marker ${op.kind}">${MARKER[op.kind]}</span>
+          <span>${escAttr(op.label)}${op.detail ? `<span class="linediff-detail">— ${escAttr(op.detail)}</span>` : ''}</span>
+        </div>`,
+    )
+    .join('');
+
+  return `
+    <h2>📜 Execution Path Diff</h2>
+    <p class="muted">Event-by-event diff of significant log events (METHOD_ENTRY, SOQL, DML, exceptions, debugs, callouts). Helps you see <em>which</em> branches were taken differently between runs.</p>
+    <div class="linediff-stats">
+      <span class="linediff-pill same">${stats.same} unchanged</span>
+      <span class="linediff-pill added">${stats.added} added</span>
+      <span class="linediff-pill removed">${stats.removed} removed</span>
+      <span class="linediff-pill changed">${stats.changed} changed</span>
+    </div>
+    <div class="linediff-list">${rows}</div>
+  `;
+}
+
 export function renderComparisonHtml(c: Comparison): string {
   const esc = (s: string) =>
     (s ?? '').replace(/[&<>"']/g, (ch) =>
@@ -152,6 +195,25 @@ export function renderComparisonHtml(c: Comparison): string {
     .status-pill.unchanged { background: var(--vscode-editorWidget-background); opacity: 0.7; }
     button { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; }
     button:hover { background: var(--vscode-button-hoverBackground); }
+    .linediff-stats { display: flex; gap: 8px; margin: 8px 0 4px; font-size: 12px; }
+    .linediff-pill { padding: 2px 8px; border-radius: 10px; font-family: var(--vscode-editor-font-family); }
+    .linediff-pill.same { background: rgba(100, 116, 139, 0.15); }
+    .linediff-pill.added { background: rgba(34, 197, 94, 0.15); color: #22c55e; }
+    .linediff-pill.removed { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+    .linediff-pill.changed { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
+    .linediff-list { font-family: var(--vscode-editor-font-family); font-size: 12px; max-height: 480px; overflow-y: auto; border: 1px solid var(--vscode-panel-border); border-radius: 4px; margin-top: 8px; }
+    .linediff-row { display: grid; grid-template-columns: 18px 1fr; gap: 8px; padding: 2px 8px; border-bottom: 1px solid var(--vscode-panel-border); }
+    .linediff-row:last-child { border-bottom: none; }
+    .linediff-row.same { opacity: 0.55; }
+    .linediff-row.added { background: rgba(34, 197, 94, 0.08); }
+    .linediff-row.removed { background: rgba(239, 68, 68, 0.08); }
+    .linediff-row.changed { background: rgba(245, 158, 11, 0.06); }
+    .linediff-marker { font-weight: 600; }
+    .linediff-marker.same { color: var(--vscode-foreground); opacity: 0.4; }
+    .linediff-marker.added { color: #22c55e; }
+    .linediff-marker.removed { color: #ef4444; }
+    .linediff-marker.changed { color: #f59e0b; }
+    .linediff-detail { margin-left: 8px; opacity: 0.75; font-style: italic; }
   </style></head>
   <body>
     <h1>📊 Log Comparison</h1>
@@ -190,6 +252,9 @@ export function renderComparisonHtml(c: Comparison): string {
       <tr><th>Query pattern</th><th>Count (B → C)</th><th>Rows (B → C)</th><th>Total ms (B → C)</th></tr>
       ${soqlRows || '<tr><td colspan="4" class="muted">No SOQL to compare.</td></tr>'}
     </table>
+
+    ${renderLineDiff(c)}
+
     <script>
       const vscode = acquireVsCodeApi();
       function exportMarkdown() { vscode.postMessage({ command: 'exportCompareMarkdown' }); }
