@@ -10,6 +10,11 @@
 
 Paste any Salesforce Apex debug log into VS Code, right-click, and get an instant, structured breakdown:
 
+- 🔥 **CPU Profiler** — self-time attribution, hot path, single-bottleneck callout. The first Apex tool that tells you _where_ the CPU actually went, not just which method took longest.
+- 🔁 **Recurring patterns** — _"this NullPointerException has appeared 4 times this week"_. Cross-log analytics on your saved analyses.
+- ⚡ **Async tracer** — stitches together parent and child logs for `@future` / Queueable / Batch / Schedulable, so you can see the full async chain.
+- 🪝 **Trigger order visualiser** — order of execution per sObject + DML phase, slowest-trigger callout, recursion detection.
+- 🎚️ **Debug-level recommendations** — tells you to raise / lower specific categories based on what events actually appeared.
 - 💡 **Performance Insights** — plain-English summary of where time went
 - 🛑 **Issues & errors** — fatal errors, exceptions, SOQL-in-loop, governor-limit violations
 - 🛠️ **Inline diagnostics** — issues become red squiggles directly in the log file (Problems pane integration)
@@ -27,6 +32,97 @@ Paste any Salesforce Apex debug log into VS Code, right-click, and get an instan
 - 🔀 **Compare two logs** — side-by-side diff for before / after optimisations
 - 🗂️ **Recent analyses** — last 10 analyses persisted per workspace, one click to reopen
 - 🤖 **AI root-cause + follow-up chat** — OpenRouter, Anthropic, OpenAI, or Google Gemini
+
+---
+
+## 🔥 CPU Profiler with hotspot attribution
+
+**New in v0.5.0** — the Profiler tab gives you what no other Apex tool does: **self-time attribution**.
+
+Every existing Apex tool tells you a method took 1,200 ms total. Apex Doctor tells you _why_:
+
+```
+AccountHandler.processAccounts     → 1,200ms total | 45ms self
+  ↳ ContractValidator.validate     → 890ms total   | 12ms self
+      ↳ SOQL (Contract query)      → 878ms self   ← THIS IS THE BOTTLENECK
+```
+
+**Self time** = duration the method spent _directly_ executing, excluding child calls. It's how Chrome DevTools attributes CPU for JavaScript; Apex Doctor is the first to bring it to Apex.
+
+The profiler tab shows:
+
+- **Bottleneck callout** — a single line surfaced at the top: the descendant with the highest self time, with click-through to the source.
+- **Hot path** — the chain of methods from root → bottleneck, marked step by step.
+- **Hottest by self time** — methods ranked by exclusive CPU work. The "real CPU hogs."
+- **Hottest by total time** — methods ranked by inclusive CPU work. Useful for high-level orchestration hotspots.
+- Each row shows call count, % of transaction, and a visual bar.
+
+> Set `APEX_PROFILING` to `FINE` or higher in your debug level for the profiler to have full timing data.
+
+---
+
+## 🔁 Recurring patterns — _"this always breaks"_
+
+**New in v0.5.0** — across the analyses you've already run, Apex Doctor now detects:
+
+- 🔁 **Issues that recur** — _"NullPointerException in `AccountHandler.processAccounts` (line 42) — seen 5 times this week"_
+- 📈 **Trends** — _"Average SOQL count: 12 → 18 → 31 over your last 10 logs"_
+- 🗃️ **SOQL patterns** — _"This query has appeared in 6 of your last 10 logs"_
+
+Two surfaces:
+
+- **Banner on every analysis** — top-3 recurring issues shown above the summary so you know immediately if you're hitting an old problem
+- **"Apex Doctor: Recurring Issues" tree view** in the Explorer sidebar — full breakdown grouped by issue / SOQL / trends, color-coded by severity (info → warning → critical based on occurrence count)
+
+No external storage — it mines the saved Recent Analyses workspace state. Window defaults to 7 days, threshold to 3 occurrences.
+
+---
+
+## ⚡ Async operation tracer
+
+**New in v0.5.0** — Apex async logs from `@future`, Queueable, Batch, and Schedulable jobs are usually disconnected. Apex Doctor now stitches them together.
+
+For the **current log**:
+
+- Detects async invocations from `ASYNC_OPERATION_TRIGGERED`, `FUTURE_METHOD_INVOCATION`, `QUEUEABLE_PENDING`, and `ENQUEUE_JOB` events
+- Identifies whether _this very log_ is itself the body of an async job (Queueable / Batch / @future / Schedulable) — surfaced as an "Async entry" callout
+
+**Cross-log linking**:
+
+- Matches each parent invocation against your saved Recent Analyses
+- Same class name + child started within 10 minutes of the parent → linked, with a confidence score
+- See _"This Queueable enqueued at line 45 completed in `07L...` 2.3s later"_ without manually piecing it together
+
+---
+
+## 🪝 Trigger order visualiser
+
+**New in v0.5.0** — when multiple triggers fire on the same sObject, Apex Doctor shows the full execution order, grouped by DML phase.
+
+```
+Account · BeforeInsert (3 triggers)
+  1. AccountTrigger          (45ms)
+  2. AccountTeamTrigger      (12ms)
+  3. TerritoryTrigger        (890ms)  ← slowest
+```
+
+- Groups by sObject + phase (`BeforeInsert`, `AfterUpdate`, etc.)
+- Highlights the slowest trigger in each phase
+- Marks recursive triggers (same trigger appearing twice in one phase)
+
+Salesforce devs spend a lot of time guessing trigger order — now you can just look.
+
+---
+
+## 🎚️ Debug-level recommendations
+
+**New in v0.5.0** — Apex Doctor compares your trace flag's debug levels against the events that actually appeared in the log:
+
+- **Raise** — _"DB is off but you have SOQL. Set DB to FINEST to see row counts."_
+- **Lower** — _"APEX_CODE is at FINEST but only 3 of 8,000 events used it. Drop to FINE to reduce log size by ~60%."_
+- Covers `APEX_CODE`, `APEX_PROFILING`, `DB`, `CALLOUT`, `SYSTEM`, `WORKFLOW`, `VALIDATION`, `VISUALFORCE`.
+
+Saves you hunting through the Setup UI or guessing at debug-level names.
 
 ---
 
