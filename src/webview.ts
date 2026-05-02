@@ -50,6 +50,68 @@ function renderInsightsHtml(insights: Insight[]): string {
   </div>`;
 }
 
+/**
+ * Compute a 1-line "what's the headline" verdict from the analysis,
+ * tinted by severity. Lives at the very top of the panel.
+ */
+function renderVerdictBanner(a: Analysis): string {
+  const errorCount = a.issues.filter((i) => i.severity === "fatal" || i.severity === "error").length;
+  const warningCount = a.issues.filter((i) => i.severity === "warning").length;
+  const fatal = a.issues.find((i) => i.severity === "fatal");
+  const totalMs = a.summary.totalDurationMs;
+  const fmt0 = (n: number) => Math.round(n).toLocaleString();
+
+  let severity: "good" | "warning" | "critical" = "good";
+  let icon = "✅";
+  let title: string;
+  let detail = `${fmt0(totalMs)} ms · ${a.soql.length} SOQL · ${a.dml.length} DML`;
+
+  if (fatal) {
+    severity = "critical";
+    icon = "🛑";
+    title = `Execution halted — ${escapeHtml(fatal.type)}`;
+    if (fatal.lineNumber) {
+      detail = `at line ${fatal.lineNumber} · ${detail}`;
+    }
+  } else if (errorCount > 0) {
+    severity = "critical";
+    icon = "⚠️";
+    title = `${errorCount} error${errorCount === 1 ? "" : "s"} detected`;
+    detail += ` · ${warningCount} warning${warningCount === 1 ? "" : "s"}`;
+  } else if (warningCount > 0) {
+    severity = "warning";
+    icon = "⚠️";
+    title = `${warningCount} warning${warningCount === 1 ? "" : "s"} detected`;
+  } else {
+    title = "Healthy execution";
+  }
+
+  return `<div class="verdict-banner verdict-${severity}">
+    <div class="verdict-icon">${icon}</div>
+    <div class="verdict-body">
+      <div class="verdict-title">${title}</div>
+      <div class="verdict-detail">${detail}</div>
+    </div>
+  </div>`;
+}
+
+/** Compact horizontal strip — replaces the 6-card grid. */
+function renderMetricStrip(a: Analysis): string {
+  const errorCount = a.issues.filter((i) => i.severity === "fatal" || i.severity === "error").length;
+  const warningCount = a.issues.filter((i) => i.severity === "warning").length;
+  const fmt0 = (n: number) => Math.round(n).toLocaleString();
+  const cell = (label: string, value: string | number, cls = "") =>
+    `<span class="metric ${cls}"><span class="metric-value">${value}</span><span class="metric-label">${label}</span></span>`;
+  return `<div class="metric-strip">
+    ${cell("ms", fmt0(a.summary.totalDurationMs))}
+    ${cell("SOQL", a.soql.length)}
+    ${cell("DML", a.dml.length)}
+    ${cell("errors", errorCount, errorCount > 0 ? "metric-error" : "")}
+    ${cell("warnings", warningCount, warningCount > 0 ? "metric-warning" : "")}
+    ${cell("debugs", a.debugs.length)}
+  </div>`;
+}
+
 function renderLimitsHtml(limits: LimitUsage[]): string {
   if (!limits.length) {
     return `<p class="muted">No limit usage block found.</p>`;
@@ -230,7 +292,42 @@ export function renderAnalysisHtml(a: Analysis, options: AnalysisRenderOptions =
     th { background: var(--vscode-editorWidget-background); }
     code { font-family: var(--vscode-editor-font-family); font-size: 12px; }
     pre { background: var(--vscode-textCodeBlock-background); padding: 8px; border-radius: 4px; overflow-x: auto; font-size: 12px; white-space: pre-wrap; margin: 4px 0; }
-    .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; margin-top: 16px; }
+    /* Collapsible sections (Tables tab) */
+    details.section { margin: 12px 0; border: 1px solid var(--vscode-panel-border); border-radius: 6px; }
+    details.section[open] { padding-bottom: 8px; }
+    details.section > summary { list-style: none; padding: 10px 14px; cursor: pointer; font-size: 13px; font-weight: 600; user-select: none; display: flex; align-items: center; gap: 8px; }
+    details.section > summary::-webkit-details-marker { display: none; }
+    details.section > summary::before { content: "▸"; display: inline-block; transition: transform 0.15s; opacity: 0.5; font-size: 10px; }
+    details.section[open] > summary::before { transform: rotate(90deg); }
+    details.section > summary:hover { background: var(--vscode-list-hoverBackground, rgba(127, 127, 127, 0.06)); }
+    details.section > summary .count { font-size: 11px; font-weight: 500; opacity: 0.55; padding: 2px 8px; border-radius: 10px; background: var(--vscode-editorWidget-background); font-family: var(--vscode-editor-font-family); }
+    details.section > *:not(summary) { padding: 0 14px; }
+    details.section table { margin-top: 4px; }
+    /* Cleaner tables — zebra rows, no inter-cell borders */
+    details.section table { border-collapse: collapse; }
+    details.section table th, details.section table td { border: none; padding: 6px 10px; }
+    details.section table thead th { border-bottom: 1px solid var(--vscode-panel-border); background: transparent; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.65; font-weight: 500; }
+    details.section table tbody tr:nth-child(even) { background: rgba(127, 127, 127, 0.04); }
+    details.section table tbody tr:hover { background: var(--vscode-list-hoverBackground, rgba(127, 127, 127, 0.08)); }
+    /* Tighten insight cards */
+    .insights { grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)) !important; gap: 6px !important; }
+    .insight { padding: 10px 12px !important; }
+    .header { display: flex; align-items: baseline; gap: 12px; margin-bottom: 8px; }
+    .header h1 { margin: 0; }
+    .header .small { opacity: 0.55; }
+    .verdict-banner { display: flex; gap: 14px; align-items: center; padding: 14px 18px; border-radius: 8px; margin: 12px 0; border-left: 4px solid; background: var(--vscode-editorWidget-background); }
+    .verdict-banner.verdict-good { border-color: #22c55e; }
+    .verdict-banner.verdict-warning { border-color: #f59e0b; }
+    .verdict-banner.verdict-critical { border-color: #ef4444; }
+    .verdict-icon { font-size: 28px; line-height: 1; }
+    .verdict-title { font-size: 16px; font-weight: 600; line-height: 1.2; }
+    .verdict-detail { font-size: 12px; opacity: 0.7; margin-top: 2px; font-family: var(--vscode-editor-font-family); }
+    .metric-strip { display: flex; flex-wrap: wrap; gap: 18px; padding: 10px 0 14px; border-bottom: 1px solid var(--vscode-panel-border); margin-bottom: 12px; }
+    .metric { display: flex; flex-direction: column; gap: 2px; line-height: 1; }
+    .metric-value { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; font-family: var(--vscode-editor-font-family); }
+    .metric-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px; opacity: 0.55; }
+    .metric.metric-error .metric-value { color: #ef4444; }
+    .metric.metric-warning .metric-value { color: #f59e0b; }
     .card { background: var(--vscode-editorWidget-background); padding: 10px 12px; border-radius: 6px; }
     .card .v { font-size: 20px; font-weight: 600; }
     .card .l { font-size: 10px; text-transform: uppercase; opacity: 0.7; letter-spacing: 0.5px; }
@@ -315,21 +412,18 @@ export function renderAnalysisHtml(a: Analysis, options: AnalysisRenderOptions =
     ${tabSwitchingCss()}
   </style></head>
   <body>
-    <h1>Apex Doctor</h1>
-    <p class="tagline">API ${esc(a.summary.apiVersion)} · ${a.summary.totalEvents} events · ${fmt(a.summary.totalDurationMs)} ms total</p>
+    <div class="header">
+      <h1>Apex Doctor</h1>
+      <span class="muted small">API ${esc(a.summary.apiVersion)} · ${a.summary.totalEvents} events</span>
+    </div>
+
+    ${renderVerdictBanner(a)}
 
     ${userInfoHtml}
 
     ${renderRecurringBanner(options.recurring)}
 
-    <div class="summary">
-      <div class="card"><div class="l">Total Duration</div><div class="v">${fmt(a.summary.totalDurationMs)} ms</div></div>
-      <div class="card"><div class="l">SOQL Queries</div><div class="v">${a.soql.length}</div></div>
-      <div class="card"><div class="l">DML Operations</div><div class="v">${a.dml.length}</div></div>
-      <div class="card"><div class="l">Errors</div><div class="v">${a.issues.filter((i) => i.severity === "fatal" || i.severity === "error").length}</div></div>
-      <div class="card"><div class="l">Warnings</div><div class="v">${a.issues.filter((i) => i.severity === "warning").length}</div></div>
-      <div class="card"><div class="l">Debug Logs</div><div class="v">${a.debugs.length}</div></div>
-    </div>
+    ${renderMetricStrip(a)}
 
     <div class="actions">
       <button onclick="explainAll()" id="btn-explain-all">🤖 Explain root cause with AI</button>
@@ -399,20 +493,30 @@ export function renderAnalysisHtml(a: Analysis, options: AnalysisRenderOptions =
     </div>
 
     <div class="tab-panel" data-panel="tables">
-      <h2>📊 Code Units</h2>
-      ${codeUnitsHtml}
+      <details class="section" open>
+        <summary>SOQL Queries <span class="count">${a.soql.length}</span></summary>
+        ${soqlHtml}
+      </details>
 
-      <h2>🐌 Slowest Methods (top 50)</h2>
-      ${methodsHtml}
+      <details class="section" ${a.dml.length ? "" : ""}>
+        <summary>DML Operations <span class="count">${a.dml.length}</span></summary>
+        ${dmlHtml}
+      </details>
 
-      <h2>🗃️ SOQL Queries</h2>
-      ${soqlHtml}
+      <details class="section">
+        <summary>Slowest Methods <span class="count">${a.methods.length}</span></summary>
+        ${methodsHtml}
+      </details>
 
-      <h2>✏️ DML Operations</h2>
-      ${dmlHtml}
+      <details class="section">
+        <summary>Code Units <span class="count">${a.codeUnits.length}</span></summary>
+        ${codeUnitsHtml}
+      </details>
 
-      <h2>🐞 Debug Statements</h2>
-      ${debugsHtml}
+      <details class="section">
+        <summary>Debug Statements <span class="count">${a.debugs.length}</span></summary>
+        ${debugsHtml}
+      </details>
     </div>
 
     <script>

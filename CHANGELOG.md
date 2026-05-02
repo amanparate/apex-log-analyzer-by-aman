@@ -5,6 +5,18 @@ All notable changes to Apex Doctor will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] — 2026-05-01
+
+### Changed (UI polish)
+
+- **Verdict banner at the top of every analysis** — replaces the busy 6-card grid with a single-sentence headline tinted by severity (`✅ Healthy execution`, `🛑 Execution halted — NullPointerException`, etc.) plus a subtle metric line.
+- **Compact horizontal metric strip** — `380 ms · 5 SOQL · 0 DML · 0 errors · 1 warning · 12 debugs` instead of six big cards. Errors / warnings only get a color tint when the count is > 0; everything else stays neutral so visual hierarchy reads top-to-bottom.
+- **Collapsible sections in the Tables tab** — every table is now a `<details>` block with the row count rendered as a chip in the header (e.g. `SOQL Queries · 47`). SOQL is open by default; the rest are closed so a noisy log doesn't push the entire view downwards.
+- **Cleaner table styling** — replaces inter-cell borders with zebra-striped rows + a single underline on the header. Hover state highlights the row. Same data density, much less visual noise.
+- **Tighter insight cards** — minimum width raised from 320px → 360px, padding reduced, gaps tightened, so 1–2 cards per row stays the norm rather than `repeat(auto-fit)` blowing them wide.
+
+No behavioural changes — every feature still works exactly as before. Test count unchanged at 31 passing.
+
 ## [0.8.0] — 2026-05-01
 
 ### Added
