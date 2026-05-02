@@ -5,6 +5,12 @@ All notable changes to Apex Doctor will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.1] — 2026-05-02
+
+### Fixed
+
+- **Marketplace listing now ships with the up-to-date README and CHANGELOG.** Versions 0.5 → 0.9 were built from a worktree whose docs hadn't been synced from `main`, so the Marketplace page kept showing the v0.3-era listing. No code changes — same v0.9.0 features, properly documented.
+
 ## [0.9.0] — 2026-05-01
 
 ### Changed (UI polish)

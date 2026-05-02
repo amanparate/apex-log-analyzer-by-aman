@@ -2,7 +2,7 @@
   "name": "apex-doctor",
   "displayName": "Apex Doctor",
   "description": "Diagnose Salesforce Apex debug logs in seconds. AI root-cause analysis, performance insights, live log streaming, SOQL-in-loop detection, activity timeline, and one-click navigation to Apex source.",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "publisher": "amanparate",
   "author": {
     "name": "Aman Parate",
@@ -22,8 +22,13 @@
     "color": "#032E61",
     "theme": "dark"
   },
-  "engines": { "vscode": "^1.116.0" },
-  "categories": ["Other", "Visualization"],
+  "engines": {
+    "vscode": "^1.116.0"
+  },
+  "categories": [
+    "Other",
+    "Visualization"
+  ],
   "keywords": [
     "salesforce",
     "apex",
@@ -40,58 +45,181 @@
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
-      { "command": "apexDoctor.analyze", "title": "Analyse this Apex Log", "category": "Apex Doctor" },
-      { "command": "apexDoctor.fetchLog", "title": "Fetch Log from Salesforce", "category": "Apex Doctor" },
-      { "command": "apexDoctor.exportMarkdown", "title": "Export Analysis as Markdown", "category": "Apex Doctor" },
-      { "command": "apexDoctor.setApiKey", "title": "Set LLM API Key", "category": "Apex Doctor" },
-      { "command": "apexDoctor.startStream", "title": "Start Log Streaming", "category": "Apex Doctor" },
-      { "command": "apexDoctor.stopStream", "title": "Stop Log Streaming", "category": "Apex Doctor" },
-      { "command": "apexDoctor.compareLogs", "title": "Compare Two Apex Logs", "category": "Apex Doctor" },
-      { "command": "apexDoctor.clearApiKey", "title": "Clear LLM API Key", "category": "Apex Doctor" },
-      { "command": "apexDoctor.openRecent", "title": "Open Recent Analysis", "category": "Apex Doctor" },
-      { "command": "apexDoctor.clearRecent", "title": "Clear Recent Analyses", "category": "Apex Doctor", "icon": "$(clear-all)" },
-      { "command": "apexDoctor.removeRecent", "title": "Remove from Recent", "category": "Apex Doctor", "icon": "$(close)" },
-      { "command": "apexDoctor.manageTraceFlags", "title": "Manage Trace Flags", "category": "Apex Doctor" },
-      { "command": "apexDoctor.refreshCoverage", "title": "Refresh Test Coverage", "category": "Apex Doctor" },
-      { "command": "apexDoctor.toggleCoverage", "title": "Toggle Coverage Overlay", "category": "Apex Doctor" },
-      { "command": "apexDoctor.queryPlan", "title": "Run SOQL Query Plan…", "category": "Apex Doctor" },
-      { "command": "apexDoctor.openAnonymousEditor", "title": "Open Anonymous Apex Editor", "category": "Apex Doctor" },
-      { "command": "apexDoctor.runAnonymousApex", "title": "Run This Anonymous Apex", "category": "Apex Doctor" }
+      {
+        "command": "apexDoctor.analyze",
+        "title": "Analyse this Apex Log",
+        "category": "Apex Doctor"
+      },
+      {
+        "command": "apexDoctor.fetchLog",
+        "title": "Fetch Log from Salesforce",
+        "category": "Apex Doctor"
+      },
+      {
+        "command": "apexDoctor.exportMarkdown",
+        "title": "Export Analysis as Markdown",
+        "category": "Apex Doctor"
+      },
+      {
+        "command": "apexDoctor.setApiKey",
+        "title": "Set LLM API Key",
+        "category": "Apex Doctor"
+      },
+      {
+        "command": "apexDoctor.startStream",
+        "title": "Start Log Streaming",
+        "category": "Apex Doctor"
+      },
+      {
+        "command": "apexDoctor.stopStream",
+        "title": "Stop Log Streaming",
+        "category": "Apex Doctor"
+      },
+      {
+        "command": "apexDoctor.compareLogs",
+        "title": "Compare Two Apex Logs",
+        "category": "Apex Doctor"
+      },
+      {
+        "command": "apexDoctor.clearApiKey",
+        "title": "Clear LLM API Key",
+        "category": "Apex Doctor"
+      },
+      {
+        "command": "apexDoctor.openRecent",
+        "title": "Open Recent Analysis",
+        "category": "Apex Doctor"
+      },
+      {
+        "command": "apexDoctor.clearRecent",
+        "title": "Clear Recent Analyses",
+        "category": "Apex Doctor",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "apexDoctor.removeRecent",
+        "title": "Remove from Recent",
+        "category": "Apex Doctor",
+        "icon": "$(close)"
+      },
+      {
+        "command": "apexDoctor.manageTraceFlags",
+        "title": "Manage Trace Flags",
+        "category": "Apex Doctor"
+      },
+      {
+        "command": "apexDoctor.refreshCoverage",
+        "title": "Refresh Test Coverage",
+        "category": "Apex Doctor"
+      },
+      {
+        "command": "apexDoctor.toggleCoverage",
+        "title": "Toggle Coverage Overlay",
+        "category": "Apex Doctor"
+      },
+      {
+        "command": "apexDoctor.queryPlan",
+        "title": "Run SOQL Query Plan…",
+        "category": "Apex Doctor"
+      },
+      {
+        "command": "apexDoctor.openAnonymousEditor",
+        "title": "Open Anonymous Apex Editor",
+        "category": "Apex Doctor"
+      },
+      {
+        "command": "apexDoctor.runAnonymousApex",
+        "title": "Run This Anonymous Apex",
+        "category": "Apex Doctor"
+      }
     ],
     "views": {
       "explorer": [
-        { "id": "apexDoctor.recent", "name": "Apex Doctor: Recent Logs" },
-        { "id": "apexDoctor.recurring", "name": "Apex Doctor: Recurring Issues" }
+        {
+          "id": "apexDoctor.recent",
+          "name": "Apex Doctor: Recent Logs"
+        },
+        {
+          "id": "apexDoctor.recurring",
+          "name": "Apex Doctor: Recurring Issues"
+        }
       ]
     },
     "menus": {
       "editor/context": [
-        { "command": "apexDoctor.analyze", "group": "1_apexDoctor@1" }
+        {
+          "command": "apexDoctor.analyze",
+          "group": "1_apexDoctor@1"
+        }
       ],
       "view/title": [
-        { "command": "apexDoctor.clearRecent", "when": "view == apexDoctor.recent", "group": "navigation" }
+        {
+          "command": "apexDoctor.clearRecent",
+          "when": "view == apexDoctor.recent",
+          "group": "navigation"
+        }
       ],
       "view/item/context": [
-        { "command": "apexDoctor.removeRecent", "when": "view == apexDoctor.recent && viewItem == apexDoctor.recentEntry", "group": "inline" }
+        {
+          "command": "apexDoctor.removeRecent",
+          "when": "view == apexDoctor.recent && viewItem == apexDoctor.recentEntry",
+          "group": "inline"
+        }
       ],
       "commandPalette": [
-        { "command": "apexDoctor.analyze" },
-        { "command": "apexDoctor.fetchLog" },
-        { "command": "apexDoctor.exportMarkdown" },
-        { "command": "apexDoctor.setApiKey" },
-        { "command": "apexDoctor.clearApiKey" },
-        { "command": "apexDoctor.startStream" },
-        { "command": "apexDoctor.stopStream" },
-        { "command": "apexDoctor.compareLogs" },
-        { "command": "apexDoctor.clearRecent" },
-        { "command": "apexDoctor.manageTraceFlags" },
-        { "command": "apexDoctor.refreshCoverage" },
-        { "command": "apexDoctor.toggleCoverage" },
-        { "command": "apexDoctor.queryPlan" },
-        { "command": "apexDoctor.openAnonymousEditor" },
-        { "command": "apexDoctor.runAnonymousApex" },
-        { "command": "apexDoctor.openRecent", "when": "false" },
-        { "command": "apexDoctor.removeRecent", "when": "false" }
+        {
+          "command": "apexDoctor.analyze"
+        },
+        {
+          "command": "apexDoctor.fetchLog"
+        },
+        {
+          "command": "apexDoctor.exportMarkdown"
+        },
+        {
+          "command": "apexDoctor.setApiKey"
+        },
+        {
+          "command": "apexDoctor.clearApiKey"
+        },
+        {
+          "command": "apexDoctor.startStream"
+        },
+        {
+          "command": "apexDoctor.stopStream"
+        },
+        {
+          "command": "apexDoctor.compareLogs"
+        },
+        {
+          "command": "apexDoctor.clearRecent"
+        },
+        {
+          "command": "apexDoctor.manageTraceFlags"
+        },
+        {
+          "command": "apexDoctor.refreshCoverage"
+        },
+        {
+          "command": "apexDoctor.toggleCoverage"
+        },
+        {
+          "command": "apexDoctor.queryPlan"
+        },
+        {
+          "command": "apexDoctor.openAnonymousEditor"
+        },
+        {
+          "command": "apexDoctor.runAnonymousApex"
+        },
+        {
+          "command": "apexDoctor.openRecent",
+          "when": "false"
+        },
+        {
+          "command": "apexDoctor.removeRecent",
+          "when": "false"
+        }
       ]
     },
     "configuration": {
@@ -99,7 +227,12 @@
       "properties": {
         "apexDoctor.provider": {
           "type": "string",
-          "enum": ["openrouter", "anthropic", "openai", "gemini"],
+          "enum": [
+            "openrouter",
+            "anthropic",
+            "openai",
+            "gemini"
+          ],
           "enumDescriptions": [
             "OpenRouter — free tier available, key starts with sk-or-",
             "Anthropic Claude — paid, key starts with sk-ant-",
@@ -147,7 +280,9 @@
         "apexDoctor.flagSoqlOnObjects": {
           "type": "array",
           "default": [],
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "description": "List of sObject names (e.g. [\"Account\", \"Opportunity\"]) — Apex Doctor warns whenever a SOQL query touches one of these objects. Useful for objects with strict perf budgets."
         },
         "apexDoctor.enableInlineDiagnostics": {
@@ -173,15 +308,15 @@
     "test": "vscode-test"
   },
   "devDependencies": {
-    "@types/vscode": "^1.116.0",
     "@types/mocha": "^10.0.10",
     "@types/node": "22.x",
-    "typescript-eslint": "^8.56.1",
-    "eslint": "^9.39.3",
+    "@types/vscode": "^1.116.0",
+    "@vscode/test-cli": "^0.0.12",
+    "@vscode/test-electron": "^2.5.2",
     "esbuild": "^0.27.3",
+    "eslint": "^9.39.3",
     "npm-run-all": "^4.1.5",
     "typescript": "^5.9.3",
-    "@vscode/test-cli": "^0.0.12",
-    "@vscode/test-electron": "^2.5.2"
+    "typescript-eslint": "^8.56.1"
   }
 }
